@@ -264,6 +264,23 @@ button{font-family:inherit;color:inherit;cursor:pointer}
 .speaker svg{width:21px;height:21px}
 .speaker.big{padding:24px 30px;font-size:16px;border-radius:18px}
 .speaker.big svg{width:32px;height:32px}
+.sayrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.speaker.slow{
+  background:var(--paper-2);color:var(--ai);border:1.5px solid var(--line);
+  border-bottom-width:4px;box-shadow:none;padding:11px 15px;font-size:13px;
+}
+.speaker.slow:active{transform:translateY(2px);border-bottom-width:2px}
+.speaker.slow svg{width:19px;height:19px}
+/* 눌러서 들을 수 있는 영어 — 살짝 밑줄을 둡니다 */
+.qjp.tappable{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;
+  text-decoration-color:var(--stone);text-underline-offset:8px}
+.qjp.tappable:active{opacity:.6}
+.fb-say{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;vertical-align:middle;
+  background:transparent;border:0;padding:2px 6px;margin-left:6px;color:var(--ai);
+}
+.fb-say svg{width:20px;height:20px}
+.fb-say:active{opacity:.55}
 
 .opts{display:flex;flex-direction:column;gap:10px;margin-top:26px}
 .opt{
@@ -1636,6 +1653,7 @@ const ICON={
   moon:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>',
   note:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 3 9 5.2V15a3.2 3.2 0 1 0 2 2.95V8.9l7-1.4v5.1a3.2 3.2 0 1 0 2 2.95V3z"/></svg>',
   spk:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4zm13.5 3c0-1.6-.9-3-2.2-3.7v7.4c1.3-.7 2.2-2.1 2.2-3.7z"/></svg>',
+  turtle:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 6c-3.6 0-6.5 2.3-6.5 5.4 0 .9.2 1.7.7 2.5H4a1 1 0 0 0 0 2h1.9l-.5 1.4a1 1 0 0 0 1.9.7l.7-2.1h8l.7 2.1a1 1 0 0 0 1.9-.7l-.5-1.4H20a1 1 0 0 0 0-2h-2.2c.4-.8.7-1.6.7-2.5C18.5 8.3 15.6 6 12 6zm9.3 3.6-2 .6a1 1 0 0 0 .5 1.9l2-.6a1 1 0 0 0-.5-1.9z"/></svg>',
   mute:'<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path d="M16 9.5l4.5 4.5M20.5 9.5L16 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
 };
 
@@ -1850,17 +1868,40 @@ function loadVoices(){
   EN_VOICE = en.find(v=>/en[-_]us/i.test(v.lang)) || en[0] || null;
 }
 if(TTS){ loadVoices(); speechSynthesis.addEventListener('voiceschanged', loadVoices); }
-function speak(text){
-  if(!TTS||!text) return;
+
+/* iOS·사파리는 사용자가 화면을 한 번 건드리기 전에는 소리를 내주지 않습니다.
+   첫 터치 때 조용한 발화를 한 번 흘려보내 음성 엔진을 깨워 둡니다.        */
+let TTS_WARM=false;
+function warmTTS(){
+  if(!TTS || TTS_WARM) return;
+  TTS_WARM=true;
   try{
-    speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance(text);
-    u.lang='en-US'; u.rate=.85; u.pitch=1;
-    if(EN_VOICE) u.voice=EN_VOICE;
+    loadVoices();
+    const u=new SpeechSynthesisUtterance(' ');
+    u.volume=0; u.lang='en-US';
     speechSynthesis.speak(u);
   }catch(e){}
 }
-/* 듣기 문제는 영어 목소리가 있을 때만 (iOS는 목록이 늦게 채워집니다) */
+
+function speak(text, slow){
+  if(!TTS||!text) return;
+  try{
+    warmTTS();
+    speechSynthesis.cancel();
+    /* 사파리에서 cancel 직후의 speak 이 삼켜지는 일이 있어 한 박자 둡니다 */
+    setTimeout(()=>{
+      try{
+        const u=new SpeechSynthesisUtterance(text);
+        u.lang='en-US'; u.rate= slow ? .45 : .85; u.pitch=1;
+        if(EN_VOICE) u.voice=EN_VOICE;
+        speechSynthesis.speak(u);
+      }catch(e){}
+    }, 60);
+  }catch(e){}
+}
+/* 스피커 버튼은 음성 기능만 있으면 보여 줍니다 */
+const canSpeak = () => TTS;
+/* 듣기 '문제'는 영어 목소리가 확인될 때만 냅니다 (iOS는 목록이 늦게 채워집니다) */
 function audioOK(){ return TTS && (EN_VOICE || !VOICES_SEEN); }
 
 /* ---------------- 4. EXERCISE BUILDER ---------------- */
@@ -2584,12 +2625,17 @@ function renderExercise(){
   const e=G.queue[G.i];
   G.answered=false; G.sel=null; G.built=[]; G.typed=''; G.ms=null;
   const combo = G.combo>=3 ? `<span class="combo">${ICON.bolt}${G.combo} 콤보</span>` : '';
-  const say = txt => audioOK()? `<button class="speaker" data-say="${esc(txt)}">${ICON.sound} 듣기</button>` : '';
+  const say = (txt, big) => canSpeak()
+    ? `<div class="sayrow">
+         <button class="speaker${big?' big':''}" data-say="${esc(txt)}" aria-label="다시 듣기">${ICON.sound} ${big?'다시 듣기':'듣기'}</button>
+         <button class="speaker slow" data-say="${esc(txt)}" data-slow="1" aria-label="느리게 듣기">${ICON.turtle} 느리게</button>
+       </div>` : '';
   let body='', footer='';
 
   if(e.kind==='mcq'){
+    const tap = e.audio && canSpeak();
     const head = e.jp
-      ? `<div class="qjp jp${e.jp && [...e.jp].length<=2 ? ' solo':''}">${esc(e.jp)}</div>${e.kana&&e.kana!==e.jp?`<div class="qkana jp">${esc(e.kana)}</div>`:''}
+      ? `<div class="qjp jp${e.jp && [...e.jp].length<=2 ? ' solo':''}${tap?' tappable':''}"${tap?` data-say="${esc(e.audio)}" role="button" aria-label="눌러서 듣기"`:''}>${esc(e.jp)}</div>${e.kana&&e.kana!==e.jp?`<div class="qkana jp">${esc(e.kana)}</div>`:''}
          ${e.audio?`<div style="margin-top:16px">${say(e.audio)}</div>`:''}`
       : `<div class="qko">${esc(e.ko)}</div>`;
     body=`<div class="prompt-label">${esc(e.q)}${combo}</div>${head}
@@ -2598,7 +2644,7 @@ function renderExercise(){
   }
   else if(e.kind==='listen'){
     body=`<div class="prompt-label">${esc(e.q)}${combo}</div>
-      <div style="margin:6px 0 2px"><button class="speaker big" data-say="${esc(e.audio)}">${ICON.sound} 다시 듣기</button></div>
+      <div style="margin:6px 0 2px">${say(e.audio, true)}</div>
       <div class="qhint">소리를 듣고 알맞은 것을 고르세요.</div>
       <div class="opts">${e.options.map(o=>`<button class="opt jp" data-v="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
     footer=`<button class="cta" id="check" disabled>확인</button>`;
@@ -2606,7 +2652,7 @@ function renderExercise(){
   else if(e.kind==='assemble'){
     body=`<div class="prompt-label">${esc(e.q)}${combo}</div>
       <div class="qko">${esc(e.ko)}</div>
-      ${e.audio&&audioOK()?`<div style="margin-top:16px">${say(e.audio)}</div>`:''}
+      ${e.audio?`<div style="margin-top:16px">${say(e.audio)}</div>`:''}
       <div class="answerline" id="ansLine"></div>
       <div class="answerline second"></div>
       <div class="bank" id="bank">${e.tokens.map((t,i)=>`<button class="tok jp" data-i="${i}">${esc(t)}</button>`).join('')}</div>`;
@@ -2629,7 +2675,7 @@ function renderExercise(){
     body=`<div class="prompt-label">${esc(e.q)}${combo}</div>
       <div class="qko">${esc(e.ko)}</div>
       ${e.hint?`<div class="qkana">${esc(e.hint)}</div>`:''}
-      ${audioOK()?`<div style="margin-top:14px">${say(e.audio)}</div>`:''}
+      ${e.audio?`<div style="margin-top:14px">${say(e.audio)}</div>`:''}
       <input class="spellbox jp" id="spell" type="text" inputmode="latin" autocomplete="off"
              autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="type here">`;
     footer=`<button class="cta" id="check" disabled>확인</button>`;
@@ -2638,7 +2684,10 @@ function renderExercise(){
   app.innerHTML=shell(body, footer);
   petalsOff();
   $('#quitBtn').onclick=confirmQuit;
-  app.querySelectorAll('[data-say]').forEach(b=>b.onclick=()=>speak(b.dataset.say));
+  app.querySelectorAll('[data-say]').forEach(b=>b.onclick=ev=>{
+    ev.preventDefault(); ev.stopPropagation();
+    speak(b.dataset.say, b.dataset.slow==='1');
+  });
   $('#fbBtn').onclick=next;
 
   if(e.kind==='mcq'||e.kind==='listen') bindOptions(e);
@@ -2675,7 +2724,9 @@ function bindAssemble(e){
   }
   bank.querySelectorAll('.tok').forEach(t=>t.onclick=()=>{
     if(G.answered||t.classList.contains('ghost')) return;
-    G.built.push({i:+t.dataset.i, t:e.tokens[+t.dataset.i]}); paint();
+    const word=e.tokens[+t.dataset.i];
+    speak(word);                       // 고른 낱말을 하나씩 들려줍니다
+    G.built.push({i:+t.dataset.i, t:word}); paint();
   });
   paint();
   chk.onclick=()=>judge(G.built.map(b=>b.t).join(' ')===e.answer, e.answer);
@@ -2684,11 +2735,12 @@ function bindMatch(e){
   const ms=G.ms;
   app.querySelectorAll('.mcard').forEach(c=>c.onclick=()=>{
     if(G.answered||c.classList.contains('gone')) return;
+    if(c.dataset.side==='l') speak(c.dataset.k);      // 영어 카드는 눌를 때마다 들려줍니다
     if(!ms.sel){ ms.sel=c; c.classList.add('sel'); return; }
     if(ms.sel===c){ c.classList.remove('sel'); ms.sel=null; return; }
     if(ms.sel.dataset.side===c.dataset.side){ ms.sel.classList.remove('sel'); ms.sel=c; c.classList.add('sel'); return; }
     if(ms.sel.dataset.k===c.dataset.k){
-      const w=e.pairs.find(p=>p.j===c.dataset.k); if(w) speak(w.k);
+      const w=e.pairs.find(p=>p.j===c.dataset.k); if(w) speak(w.j);
       sfx('pair');
       const r=c.getBoundingClientRect(); burst(r.left+r.width/2, r.top+r.height/2, 10, .6);
       const a=ms.sel; a.classList.remove('sel');
@@ -2723,6 +2775,22 @@ function bindType(e){
 }
 
 /* ---------------- 7. JUDGE + FEEDBACK ---------------- */
+/* 이 문제에서 들려줄 영어 — 발음기호(k)가 아니라 영어 원문(j)입니다 */
+function sayText(e){
+  if(!e) return null;
+  if(e.audio) return e.audio;
+  if(e.item && e.item.j) return e.item.j;
+  return null;
+}
+/* 피드백 줄에 붙는 작은 스피커 */
+function fbSay(e){
+  const t=sayText(e);
+  return (t && canSpeak())
+    ? ` <button class="fb-say" data-say="${esc(t)}" aria-label="정답 듣기">${ICON.sound}</button>`
+     + `<button class="fb-say" data-say="${esc(t)}" data-slow="1" aria-label="정답 느리게 듣기">${ICON.turtle}</button>`
+    : '';
+}
+
 function judge(ok, correct, missCount){
   if(G.answered) return;
   G.answered=true;
@@ -2744,7 +2812,7 @@ function judge(ok, correct, missCount){
     sfx(G.combo>=5?'combo':'correct');
     burst(innerWidth/2, innerHeight-130, G.combo>=5?46:28, G.combo>=5?1.25:1);
     xpPop(gain);
-    if(e.audio) speak(e.audio); else if(e.item&&e.item.k) speak(e.item.k);
+    speak(sayText(e));
     if(!FREE_MODE){                       // 자유 복습은 일정을 앞당기지 않습니다
       if(e.item) srsTouch(e.item, true);
       if(e.kind==='match' && e.pairs) e.pairs.forEach(p=>srsTouch(p, true));
@@ -2771,6 +2839,8 @@ function judge(ok, correct, missCount){
 
   const bar=app.querySelector('.bar>i'); if(bar) bar.style.width=Math.round(G.cleared/G.total*100)+'%';
 
+  if(!ok) setTimeout(()=>speak(sayText(e)), 420);   // 틀렸을 때도 바른 소리를 한 번 들려줍니다
+
   const dead = G.hearts<=0;
   const fb=$('#fb'), btn=$('#fbBtn');
   $('#fbMark').innerHTML = `<div class="neko-${ok?'happy':'sad'}">${nekoHead(ok?'happy':'sad')}</div>
@@ -2780,16 +2850,19 @@ function judge(ok, correct, missCount){
   if(ok){
     $('#fbTitle').textContent = praise[Math.floor(Math.random()*praise.length)];
     $('#fbBody').innerHTML = (e.item && e.item.m)
-      ? `<b>${esc(e.item.j)}</b>　${e.item.k&&e.item.k!==e.item.j?esc(e.item.k)+' · ':''}${esc(e.item.m)}`
+      ? `<b>${esc(e.item.j)}</b>${fbSay(e)}　${e.item.k&&e.item.k!==e.item.j?esc(e.item.k)+' · ':''}${esc(e.item.m)}`
       : '다섯 짝을 한 번에 모두 맞혔어요.';
     btn.className='cta shu';
   } else {
     $('#fbTitle').textContent='아쉬워요';
     $('#fbBody').innerHTML = e.kind==='match'
       ? `연결을 ${missCount}번 틀렸어요. 이 문제는 뒤에서 한 번 더 나옵니다.`
-      : `정답: <b>${esc(correct||e.answer)}</b>${(e.item&&e.item.m&&e.item.m!==(correct||e.answer))?`　${esc(e.item.m)}`:''}`;
+      : `정답: <b>${esc(correct||e.answer)}</b>${fbSay(e)}${(e.item&&e.item.m&&e.item.m!==(correct||e.answer))?`　${esc(e.item.m)}`:''}`;
     btn.className='cta';
   }
+  fb.querySelectorAll('[data-say]').forEach(b2=>b2.onclick=ev=>{
+    ev.preventDefault(); speak(b2.dataset.say, b2.dataset.slow==='1');
+  });
   if(dead){ btn.textContent='결과 보기'; btn.onclick=renderFail; }
   else btn.textContent='계속하기';
   $('#mainFooter').style.visibility='hidden';
@@ -2901,7 +2974,7 @@ initCanvases();
 renderHome();
 /* browsers require a gesture before audio; unlock on the first tap */
 addEventListener('pointerdown', function unlock(){
-  ac();
+  ac(); warmTTS();
   if(S.bgmOn) setMusic(true);
   removeEventListener('pointerdown', unlock);
 }, {once:false});
